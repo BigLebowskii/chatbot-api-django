@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RAG Chatbot</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            display: flex;
+            height: 100vh;
+        }
+        .sidebar {
+            width: 300px;
+            border-right: 1px solid #ccc;
+            padding-right: 20px;
+        }
+        .main {
+            flex: 1;
+            padding-left: 20px;
+            display: flex;
+            flex-direction: column;
+        }
+        .chat-container {
+            flex: 1;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            padding: 20px;
+            overflow-y: auto;
+            margin-bottom: 20px;
+        }
+        .input-container {
+            display: flex;
+        }
+        #message-input {
+            flex: 1;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            margin-right: 10px;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        .message {
+            margin-bottom: 10px;
+            padding: 10px;
+            border-radius: 5px;
+        }
+        .user {
+            background-color: #e3f2fd;
+            text-align: right;
+        }
+        .assistant {
+            background-color: #f1f1f1;
+        }
+        .upload-form {
+            margin-bottom: 20px;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+        }
+        .conversations {
+            margin-top: 20px;
+        }
+        .conversation-item {
+            padding: 10px;
+            border-bottom: 1px solid #eee;
+            cursor: pointer;
+        }
+        .conversation-item:hover {
+            background-color: #f9f9f9;
+        }
+        .active {
+            background-color: #e3f2fd;
+        }
+    </style>
+</head>
+<body>
+    <div class="sidebar">
+        <h2>Documents</h2>
+        <div class="upload-form">
+            <h3>Upload Document</h3>
+            <form id="upload-form">
+                <div>
+                    <input type="text" id="doc-title" placeholder="Document Title">
+                </div>
+                <div style="margin: 10px 0;">
+                    <input type="file" id="doc-file">
+                </div>
+                <button type="submit">Upload</button>
+            </form>
+        </div>
+        
+        <h2>Conversations</h2>
+        <button id="new-conversation">New Conversation</button>
+        <div class="conversations" id="conversation-list">
+            <!-- Conversations will be listed here -->
+        </div>
+    </div>
+    
+    <div class="main">
+        <h1>RAG Chatbot</h1>
+        <div class="chat-container" id="chat-container">
+            <!-- Messages will appear here -->
+        </div>
+        <div class="input-container">
+            <input type="text" id="message-input" placeholder="Type your message...">
+            <button id="send-button">Send</button>
+        </div>
+    </div>
+
+    <script>
+        let currentConversationId = null;
+        
+        // Create a new conversation
+        document.getElementById('new-conversation').addEventListener('click', async () => {
+            const response = await fetch('/api/conversations/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ title: 'New Conversation' }),
+            });
+            
+            const conversation = await response.json();
+            currentConversationId = conversation.id;
+            
+            // Clear the chat container
+            document.getElementById('chat-container').innerHTML = '';
+            
+            // Update conversation list
+            loadConversations();
+        });
+        
+        // Send a message
+        document.getElementById('send-button').addEventListener('click', sendMessage);
+        document.getElementById('message-input').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+        
+        async function sendMessage() {
+            if (!currentConversationId) {
+                alert('Please create or select a conversation first');
+                return;
+            }
+            
+            const messageInput = document.getElementById('message-input');
+            const message = messageInput.value.trim();
+            
+            if (message === '') return;
+            
+            // Add user message to chat
+            addMessageToChat('user', message);
+            messageInput.value = '';
+            
+            try {
+                const response = await fetch('/api/messages/chat/', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        conversation_id: currentConversationId,
+                        message: message
+                    }),
+                });
+                
+                const data = await response.json();
+                
+                // Add assistant message to chat
+                addMessageToChat('assistant', data.content);
+            } catch (error) {
+                console.error('Error:', error);
+                addMessageToChat('assistant', 'Sorry, something went wrong. Please try again.');
+            }
+        }
+        
+        function addMessageToChat(role, content) {
+            const chatContainer = document.getElementById('chat-container');
+            const messageDiv = document.createElement('div');
+            messageDiv.classList.add('message', role);
+            messageDiv.textContent = content;
+            chatContainer.appendChild(messageDiv);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+        
+        // Upload document
+        document.getElementById('upload-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const titleInput = document.getElementById('doc-title');
+            const fileInput = document.getElementById('doc-file');
+            
+            if (!fileInput.files[0]) {
+                alert('Please select a file');
+                return;
+            }
+            
+            const formData = new FormData();
+            formData.append('title', titleInput.value || fileInput.files[0].name);
+            formData.append('file', fileInput.files[0]);
+            
+            try {
+                const response = await fetch('/api/documents/upload_file/', {
+                    method: 'POST',
+                    body: formData,
+                });
+                
+                const data = await response.json();
+                alert('Document uploaded successfully');
+                
+                // Clear form
+                titleInput.value = '';
+                fileInput.value = '';
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Error uploading document');
+            }
+        });
+        
+        // Load conversations
+        async function loadConversations() {
+            try {
+                const response = await fetch('/api/conversations/');
+                const conversations = await response.json();
+                
+                const conversationList = document.getElementById('conversation-list');
+                conversationList.innerHTML = '';
+                
+                conversations.forEach(conversation => {
+                    const div = document.createElement('div');
+                    div.classList.add('conversation-item');
+                    if (conversation.id === currentConversationId) {
+                        div.classList.add('active');
+                    }
+                    div.textContent = conversation.title;
+                    div.addEventListener('click', () => selectConversation(conversation.id));
+                    conversationList.appendChild(div);
+                });
+            } catch (error) {
+                console.error('Error loading conversations:', error);
+            }
+        }
+        
+        // Select a conversation
+        async function selectConversation(conversationId) {
+            currentConversationId = conversationId;
+            
+            // Update active state in list
+            document.querySelectorAll('.conversation-item').forEach(item => {
+                item.classList.remove('active');
+                if (item.dataset.id === conversationId.toString()) {
+                    item.classList.add('active');
+                }
+            });
+            
+            // Load conversation messages
+            try {
+                const response = await fetch(`/api/conversations/${conversationId}/`);
+                const conversation = await response.json();
+                
+                const chatContainer = document.getElementById('chat-container');
+                chatContainer.innerHTML = '';
+                
+                conversation.messages.forEach(message => {
+                    addMessageToChat(message.role, message.content);
+                });
+            } catch (error) {
+                console.error('Error loading conversation:', error);
+            }
+        }
+        
+        // Initial load
+        loadConversations();
+    </script>
+</body>
+</html>
